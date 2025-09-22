@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>請求書アップロード</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+</head>
+<body class="grid place-items-center p-3">
+  <div class="phone-frame flex flex-col">
+    <header class="ios-safe bg-[#06C755] text-white px-4 pb-3">
+      <h1 class="text-base font-semibold">請求書アップロード</h1>
+    </header>
+
+    <main class="flex-1 overflow-y-auto bg-slate-50 p-4 pb-28 space-y-4">
+      <section class="bg-white p-4 rounded-2xl shadow-sm">
+        <h2 class="font-semibold">対象レコード</h2>
+        <div id="recordList" class="mt-2 grid gap-2"></div>
+        <input type="hidden" id="recordId" />
+      </section>
+
+      <section class="bg-white p-4 rounded-2xl shadow-sm">
+        <h3 class="font-semibold">請求書ファイル</h3>
+        <input id="invoiceFile" type="file" accept="application/pdf,image/*" class="h-11 px-3 rounded-xl border bg-white file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:bg-slate-100" />
+      </section>
+    </main>
+
+    <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-[390px] max-w-[100vw] bg-white p-2">
+      <button id="submit" class="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold">アップロード</button>
+    </div>
+  </div>
+
+<script>
+const SEARCH_ENDPOINT = "/api/search";
+const ATTACH_ENDPOINT = "/api/invoice-attach";
+
+async function autoSearch(uid){
+  const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
+  const data = await res.json();
+  renderRecordList(data.records || []);
+}
+
+function renderRecordList(records){
+  const wrap = document.getElementById('recordList');
+  wrap.innerHTML = "";
+  if (!records.length){
+    wrap.innerHTML = "<p class='text-sm text-slate-500'>該当なし</p>";
+    return;
+  }
+  records.forEach(r => {
+    const card = document.createElement('button');
+    card.type="button";
+    card.className="text-left p-3 rounded-xl border hover:bg-slate-50";
+    card.innerHTML = `<div class="text-sm font-semibold">#${r.recordId} ${r.header?.title||""}</div>`;
+    card.addEventListener('click', ()=>{
+      document.getElementById('recordId').value = r.recordId;
+      document.querySelectorAll('#recordList button').forEach(b=>b.classList.remove('ring','ring-emerald-400'));
+      card.classList.add('ring','ring-emerald-400');
+    });
+    wrap.appendChild(card);
+  });
+}
+
+async function submitFile(){
+  const recId = document.getElementById('recordId').value;
+  const file = document.getElementById('invoiceFile').files[0];
+  if (!recId){ alert("レコードを選択してください"); return; }
+  if (!file){ alert("ファイルを選択してください"); return; }
+  const fd = new FormData();
+  fd.append("recordId", recId);
+  fd.append("file", file, file.name);
+  const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
+  if (res.ok){ alert("アップロードしました"); }
+  else { alert("アップロードに失敗しました"); }
+}
+
+document.getElementById('submit').addEventListener('click', submitFile);
+
+// ==== UID自動取得 ====
+// 本来は liff.init → liff.getProfile() などで userId を取得して uid に設定
+(async()=>{
+  try {
+    await liff.init({ liffId: "YOUR_LIFF_ID" });
+    const profile = await liff.getProfile();
+    const uid = profile.userId;
+    autoSearch(uid);
+  } catch(e){
+    console.error("LIFF UID取得失敗", e);
+  }
+})();
+</script>
+</body>
+</html>
