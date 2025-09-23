@@ -137,7 +137,7 @@ document.getElementById("submit").addEventListener("click", async () => {
 // 本番は liff.init → liff.getProfile().userId で UID を window._uid にセット
 (async()=>{
   try {
-    await liff.init({ liffId: "YOUR_LIFF_ID" });
+    await liff.init({ liffId: "2008144627-bOAmoQo0" });
     const profile = await liff.getProfile();
     window._uid = profile.userId;
   } catch(e) {
