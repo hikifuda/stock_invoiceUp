@@ -51,17 +51,16 @@
   </div>
 
 <script>
+const LIFF_ID = "2008144627-bOAmoQo0";  // ← LINE Developersで発行されたLIFF IDをここに直書き
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
 async function fetchRecords(uid) {
+  if (!uid) return [];
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
-  if (!res.ok) {
-    console.error("search failed", await res.text());
-    return [];
-  }
-  const data = await res.json();
-  return data.records || [];
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return Array.isArray(data.records) ? data.records : [];
 }
 
 function renderRecordList(records) {
@@ -71,24 +70,20 @@ function renderRecordList(records) {
     wrap.innerHTML = "<p class='text-sm text-slate-500'>対象レコードはありません</p>";
     return;
   }
-
   records.forEach(r => {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "w-full text-left p-3 rounded-lg border hover:bg-slate-50";
     const date = r.baseDate || "-";
-
     const itemsPreview = r.itemTable.slice(0,2).map(it => {
       const lots = (it.designLot || []).join(",");
       return `${it.itemName} × ${it.qty}${lots ? " ["+lots+"]":""}`;
     });
     const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length-2}件` : "";
-
     card.innerHTML = `
       <div class="font-semibold text-sm">#${r.recordId}　入荷予定日: ${date}</div>
       <div class="text-xs text-slate-600 mt-1">${itemsPreview.join(" / ")}${more}</div>
     `;
-
     card.addEventListener("click", () => {
       document.getElementById("recordId").value = r.recordId;
       document.getElementById("recordSummary").textContent =
@@ -103,8 +98,8 @@ function renderRecordList(records) {
 const modal = document.getElementById("recordModal");
 document.getElementById("openRecordList").addEventListener("click", async () => {
   modal.classList.remove("hidden");
-  const uid = window._uid || "dummy-uid";
-  const recs = await fetchRecords(uid);
+  if (!window._uid) await initUid();
+  const recs = await fetchRecords(window._uid);
   renderRecordList(recs);
 });
 document.getElementById("closeModal").addEventListener("click", closeModal);
@@ -116,11 +111,9 @@ document.getElementById("submit").addEventListener("click", async () => {
   const file = document.getElementById("invoiceFile").files[0];
   if (!recId) { alert("レコードを選択してください"); return; }
   if (!file) { alert("ファイルを選択してください"); return; }
-
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
-
   const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
   if (res.ok) {
     alert("アップロードしました");
@@ -128,23 +121,28 @@ document.getElementById("submit").addEventListener("click", async () => {
     document.getElementById("recordSummary").textContent = "";
     document.getElementById("recordId").value = "";
   } else {
-    const txt = await res.text();
-    alert("アップロード失敗: " + txt);
+    alert("アップロード失敗: " + (await res.text()));
   }
 });
 
-// ==== UID自動取得（LIFF） ====
-// 本番は liff.init → liff.getProfile().userId で UID を window._uid にセット
-(async()=>{
+// ==== UIDの初期化（LIFF or ?uid=クエリ）====
+async function initUid() {
+  const qsUid = new URLSearchParams(location.search).get("uid");
+  if (qsUid) { window._uid = qsUid; return; }
   try {
-    await liff.init({ liffId: "2008144627-bOAmoQo0" });
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login({ redirectUri: location.href });
+      return;
+    }
     const profile = await liff.getProfile();
     window._uid = profile.userId;
-  } catch(e) {
-    console.warn("LIFF UID取得失敗, fallback dummy-uid", e);
-    window._uid = "dummy-uid";
+  } catch (e) {
+    console.warn("LIFF UID取得失敗。開発中は ?uid=xxx をURLに付けてください", e);
+    window._uid = null;
   }
-})();
+}
+initUid();
 </script>
 </body>
 </html>
