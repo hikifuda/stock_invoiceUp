@@ -1,66 +1,88 @@
+// /api/invoice-attach.js
+// 安定版: Busboy で multipart をパースして、そのまま Yoom へmultipart転送
+import Busboy from "busboy";
+
+// Next.js API Routes で生のmultipartを扱うため
 export const config = { api: { bodyParser: false } };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ message: "Method Not Allowed" });
+  const yoomUrl = process.env.YOOM_INVOICE_ATTACH_URL;
+  if (!yoomUrl) return res.status(500).json({ message: "YOOM_INVOICE_ATTACH_URL is not set" });
+
   try {
-    const { fields, filePart } = await readMultipart(req);
-    const recordId = fields["recordId"];
+    const { fields, file } = await parseMultipart(req);
+
+    const recordId = fields.recordId;
     if (!recordId) return res.status(400).json({ message: "recordId is required" });
-    if (!filePart) return res.status(400).json({ message: "file is required" });
+    if (!file)     return res.status(400).json({ message: "file is required" });
 
-    const url = process.env.YOOM_INVOICE_ATTACH_URL; // Yoom flow endpoint
-    if (!url) throw new Error("YOOM_INVOICE_ATTACH_URL is not set");
-
+    // Node18+ はグローバルに FormData/Blob がある（undici）
     const fd = new FormData();
     fd.set("recordId", recordId);
-    fd.set("file", new Blob([filePart.buffer]), filePart.filename);
+    // contentType を付与すると受け側が喜ぶ
+    const blob = new Blob([file.buffer], { type: file.mimetype || "application/octet-stream" });
+    fd.set("file", blob, file.filename || "upload");
 
-    const r = await fetch(url, {
+    const r = await fetch(yoomUrl, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.YOOM_TOKEN || ""}` },
-      body: fd
+      headers: { Authorization: `Bearer ${process.env.YOOM_TOKEN || ""}` },
+      body: fd,
     });
-    const out = await r.json().catch(()=>({}));
-    if (!r.ok) return res.status(r.status).json(out);
-    return res.status(200).json(out);
+
+    // Yoom 側が非JSONを返す場合もあるので両対応
+    const text = await r.text();
+    let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+
+    if (!r.ok) {
+      return res.status(r.status).json({
+        message: "Yoom returned non-200",
+        status: r.status,
+        body: json,
+      });
+    }
+    return res.status(200).json({ ok: true, recordId, yoom: json });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: err.message || "attach failed" });
+    console.error("[invoice-attach] error:", err);
+    return res.status(500).json({ message: err?.message || "attach failed" });
   }
 }
 
-async function readMultipart(req){
-  const contentType = req.headers["content-type"] || "";
-  const m = contentType.match(/boundary=(.*)$/i);
-  if (!m) throw new Error("Invalid multipart/form-data");
-  const boundary = "--" + m[1];
+/**
+ * Busboyで multipart/form-data をパースして
+ * - fields: { [name]: value }
+ * - file: { buffer, filename, mimetype, fieldname }
+ * を返す（単一ファイル想定）
+ */
+function parseMultipart(req) {
+  return new Promise((resolve, reject) => {
+    try {
+      const bb = Busboy({ headers: req.headers });
+      const fields = {};
+      let file = null;
 
-  const chunks = [];
-  for await (const c of req) chunks.push(c);
-  const buf = Buffer.concat(chunks);
-  const parts = buf.toString("binary").split(boundary).slice(1,-1);
+      bb.on("file", (fieldname, stream, filename, encoding, mimetype) => {
+        const chunks = [];
+        stream.on("data", (d) => chunks.push(d));
+        stream.on("limit", () => console.warn("[busboy] file size limit reached"));
+        stream.on("end", () => {
+          file = {
+            fieldname,
+            filename,
+            mimetype,
+            buffer: Buffer.concat(chunks),
+          };
+        });
+        stream.on("error", reject);
+      });
 
-  const fields = {};
-  let filePart = null;
+      bb.on("field", (name, val) => { fields[name] = val; });
+      bb.on("error", reject);
+      bb.on("finish", () => resolve({ fields, file }));
 
-  for (const part of parts) {
-    const [rawHeaders, rawBody] = part.split("\r\n\r\n");
-    if (!rawBody) continue;
-    const headers = rawHeaders.split("\r\n").filter(Boolean).map(l=>l.trim());
-    const dispLine = headers.find(h=>/^Content-Disposition/i.test(h)) || "";
-    const nameMatch = dispLine.match(/name="([^"]+)"/);
-    const filenameMatch = dispLine.match(/filename="([^"]+)"/);
-    const name = nameMatch ? nameMatch[1] : "";
-    const bodyBinary = rawBody.slice(0, -2);
-    if (filenameMatch) {
-      const filename = filenameMatch[1];
-      const start = buf.indexOf(rawBody, "binary");
-      const end = start + Buffer.byteLength(bodyBinary, "binary");
-      const slice = buf.subarray(start, end);
-      filePart = { filename, buffer: slice };
-    } else {
-      fields[name] = Buffer.from(bodyBinary, "binary").toString("utf-8");
+      req.pipe(bb);
+    } catch (e) {
+      reject(e);
     }
-  }
-  return { fields, filePart };
+  });
 }
