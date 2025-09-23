@@ -7,27 +7,46 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
-<body class="grid place-items-center p-3">
-  <div class="phone-frame flex flex-col">
-    <header class="ios-safe bg-[#06C755] text-white px-4 pb-3">
+<body class="grid place-items-center p-3 bg-slate-100">
+  <div class="phone-frame flex flex-col bg-white rounded-2xl shadow-lg w-[390px] max-w-full h-[844px]">
+    <header class="ios-safe bg-[#06C755] text-white px-4 pb-3 pt-6 rounded-t-2xl">
       <h1 class="text-base font-semibold">請求書アップロード</h1>
     </header>
 
     <main class="flex-1 overflow-y-auto bg-slate-50 p-4 pb-28 space-y-4">
+      <!-- 対象レコード -->
       <section class="bg-white p-4 rounded-2xl shadow-sm">
         <h2 class="font-semibold">対象レコード</h2>
-        <div id="recordList" class="mt-2 grid gap-2"></div>
+        <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
+        <button id="openRecordList" type="button"
+          class="mt-2 px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium">
+          選択
+        </button>
         <input type="hidden" id="recordId" />
       </section>
 
+      <!-- 請求書ファイル -->
       <section class="bg-white p-4 rounded-2xl shadow-sm">
         <h3 class="font-semibold">請求書ファイル</h3>
-        <input id="invoiceFile" type="file" accept="application/pdf,image/*" class="h-11 px-3 rounded-xl border bg-white file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:bg-slate-100" />
+        <input id="invoiceFile" type="file" accept="application/pdf,image/*"
+          class="h-11 px-3 mt-2 rounded-xl border bg-white file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:bg-slate-100" />
       </section>
     </main>
 
-    <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-[390px] max-w-[100vw] bg-white p-2">
-      <button id="submit" class="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold">アップロード</button>
+    <!-- 送信ボタン -->
+    <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-[390px] max-w-[100vw] bg-white p-2 rounded-b-2xl">
+      <button id="submit" class="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold">
+        アップロード
+      </button>
+    </div>
+  </div>
+
+  <!-- モーダル -->
+  <div id="recordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="bg-white w-[90%] max-w-lg rounded-xl shadow-lg p-4 max-h-[80vh] overflow-y-auto">
+      <h3 class="font-semibold text-lg mb-3">レコードを選択</h3>
+      <div id="recordList" class="space-y-2"></div>
+      <button id="closeModal" class="mt-4 w-full py-2 rounded-lg border">閉じる</button>
     </div>
   </div>
 
@@ -35,58 +54,95 @@
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
-async function autoSearch(uid){
+async function fetchRecords(uid) {
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
+  if (!res.ok) {
+    console.error("search failed", await res.text());
+    return [];
+  }
   const data = await res.json();
-  renderRecordList(data.records || []);
+  return data.records || [];
 }
 
-function renderRecordList(records){
-  const wrap = document.getElementById('recordList');
+function renderRecordList(records) {
+  const wrap = document.getElementById("recordList");
   wrap.innerHTML = "";
-  if (!records.length){
-    wrap.innerHTML = "<p class='text-sm text-slate-500'>該当なし</p>";
+  if (!records.length) {
+    wrap.innerHTML = "<p class='text-sm text-slate-500'>対象レコードはありません</p>";
     return;
   }
+
   records.forEach(r => {
-    const card = document.createElement('button');
-    card.type="button";
-    card.className="text-left p-3 rounded-xl border hover:bg-slate-50";
-    card.innerHTML = `<div class="text-sm font-semibold">#${r.recordId} ${r.header?.title||""}</div>`;
-    card.addEventListener('click', ()=>{
-      document.getElementById('recordId').value = r.recordId;
-      document.querySelectorAll('#recordList button').forEach(b=>b.classList.remove('ring','ring-emerald-400'));
-      card.classList.add('ring','ring-emerald-400');
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "w-full text-left p-3 rounded-lg border hover:bg-slate-50";
+    const date = r.baseDate || "-";
+
+    const itemsPreview = r.itemTable.slice(0,2).map(it => {
+      const lots = (it.designLot || []).join(",");
+      return `${it.itemName} × ${it.qty}${lots ? " ["+lots+"]":""}`;
+    });
+    const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length-2}件` : "";
+
+    card.innerHTML = `
+      <div class="font-semibold text-sm">#${r.recordId}　入荷予定日: ${date}</div>
+      <div class="text-xs text-slate-600 mt-1">${itemsPreview.join(" / ")}${more}</div>
+    `;
+
+    card.addEventListener("click", () => {
+      document.getElementById("recordId").value = r.recordId;
+      document.getElementById("recordSummary").textContent =
+        `#${r.recordId} / 入荷予定日:${date} / ${itemsPreview.join(" / ")}${more}`;
+      closeModal();
     });
     wrap.appendChild(card);
   });
 }
 
-async function submitFile(){
-  const recId = document.getElementById('recordId').value;
-  const file = document.getElementById('invoiceFile').files[0];
-  if (!recId){ alert("レコードを選択してください"); return; }
-  if (!file){ alert("ファイルを選択してください"); return; }
+// モーダル開閉
+const modal = document.getElementById("recordModal");
+document.getElementById("openRecordList").addEventListener("click", async () => {
+  modal.classList.remove("hidden");
+  const uid = window._uid || "dummy-uid";
+  const recs = await fetchRecords(uid);
+  renderRecordList(recs);
+});
+document.getElementById("closeModal").addEventListener("click", closeModal);
+function closeModal() { modal.classList.add("hidden"); }
+
+// ファイル送信
+document.getElementById("submit").addEventListener("click", async () => {
+  const recId = document.getElementById("recordId").value;
+  const file = document.getElementById("invoiceFile").files[0];
+  if (!recId) { alert("レコードを選択してください"); return; }
+  if (!file) { alert("ファイルを選択してください"); return; }
+
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
+
   const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
-  if (res.ok){ alert("アップロードしました"); }
-  else { alert("アップロードに失敗しました"); }
-}
+  if (res.ok) {
+    alert("アップロードしました");
+    document.getElementById("invoiceFile").value = "";
+    document.getElementById("recordSummary").textContent = "";
+    document.getElementById("recordId").value = "";
+  } else {
+    const txt = await res.text();
+    alert("アップロード失敗: " + txt);
+  }
+});
 
-document.getElementById('submit').addEventListener('click', submitFile);
-
-// ==== UID自動取得 ====
-// 本来は liff.init → liff.getProfile() などで userId を取得して uid に設定
+// ==== UID自動取得（LIFF） ====
+// 本番は liff.init → liff.getProfile().userId で UID を window._uid にセット
 (async()=>{
   try {
     await liff.init({ liffId: "YOUR_LIFF_ID" });
     const profile = await liff.getProfile();
-    const uid = profile.userId;
-    autoSearch(uid);
-  } catch(e){
-    console.error("LIFF UID取得失敗", e);
+    window._uid = profile.userId;
+  } catch(e) {
+    console.warn("LIFF UID取得失敗, fallback dummy-uid", e);
+    window._uid = "dummy-uid";
   }
 })();
 </script>
