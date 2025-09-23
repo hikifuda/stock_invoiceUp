@@ -1,5 +1,5 @@
 // /api/invoice-attach.js
-// 1) /k/v1/file.json にアップ → fileKey 取得
+// 1) /k/v1/file.json にアップロード → fileKey 取得
 // 2) /k/v1/record.json で添付フィールドを更新（追記 or 置換）
 import Busboy from "busboy";
 
@@ -8,19 +8,19 @@ export const config = { api: { bodyParser: false, externalResolver: true } };
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ message: "Method Not Allowed" });
 
-  // --- 必要な環境変数 ---
-  const baseUrl = process.env.KINTONE_BASE_URL;                 // 例: https://xxxxx.cybozu.com
-  const appId   = process.env.KINTONE_INBOUND_APP_ID;           // CL入荷アプリID
-  const token   = process.env.KINTONE_INBOUND_API_TOKEN;        // 書き込み権限ありのAPIトークン
+  // --- 必須の環境変数 ---
+  const baseUrl   = process.env.KINTONE_BASE_URL;                 // 例: https://xxxxx.cybozu.com
+  const appId     = process.env.KINTONE_INBOUND_APP_ID;           // 添付先(CL入荷)アプリID
+  const token     = process.env.KINTONE_INBOUND_API_TOKEN;        // 書き込み権限ありAPIトークン
   const fileField = process.env.KINTONE_FILE_FIELD || "invoiceFile"; // 添付フィールドのフィールドコード
-  const appendMode = (process.env.KINTONE_FILE_APPEND || "true").toLowerCase() === "true";
+  const appendMode = (process.env.KINTONE_FILE_APPEND || "true").toLowerCase() === "true"; // true=追記 / false=置換
 
   if (!baseUrl || !appId || !token) {
     return res.status(500).json({ message: "Kintone env vars not set" });
   }
 
   try {
-    // ---- multipart 受信 ----
+    // ---- multipart 受信（Busboy; ファイル名[object Object]対策済み）----
     const { fields, file } = await parseMultipart(req);
     const recordId = fields?.recordId?.trim();
     if (!recordId) return res.status(400).json({ message: "recordId is required" });
@@ -65,17 +65,32 @@ export default async function handler(req, res) {
 /* =========== helpers =========== */
 
 // multipart/form-data を Busboy でパース（単一ファイル想定）
+// Busboy v1 の新API(info)と旧APIの両対応。ファイル名は必ず文字列に整形。
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
     const bb = Busboy({ headers: req.headers });
     const fields = {};
     let file = null;
 
-    bb.on("file", (fieldname, stream, filename, encoding, mimetype) => {
+    bb.on("file", (fieldname, stream, a, b, c) => {
+      // 新API: a=info({ filename, mimeType }) / 旧API: a=filename, c=mimetype
+      const info = (a && typeof a === "object" && ("filename" in a || "mimeType" in a)) ? a : null;
+
+      const rawName = info ? info.filename : (typeof a === "string" ? a : "upload");
+      const filename = sanitizeFilename(rawName);
+      const mimeType = info
+        ? (info.mimeType || info.mime || "application/octet-stream")
+        : (typeof c === "string" ? c : "application/octet-stream");
+
       const chunks = [];
       stream.on("data", d => chunks.push(d));
       stream.on("end", () => {
-        file = { fieldname, filename, mimetype, buffer: Buffer.concat(chunks) };
+        file = {
+          fieldname,
+          filename,
+          mimetype: mimeType,
+          buffer: Buffer.concat(chunks),
+        };
       });
       stream.on("error", reject);
     });
@@ -86,6 +101,12 @@ function parseMultipart(req) {
 
     req.pipe(bb);
   });
+}
+
+// Windows 禁止文字などを除去しつつ、拡張子は維持
+function sanitizeFilename(name) {
+  const s = String(name || "upload").replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 255);
+  return s || "upload";
 }
 
 async function uploadToKintoneFileAPI({ baseUrl, token, filename, mimetype, buffer }) {
