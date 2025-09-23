@@ -1,0 +1,8 @@
+{
+  "name": "stock-invoice",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "busboy": "^1.6.0"
+  }
+}
