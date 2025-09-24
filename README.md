@@ -9,12 +9,19 @@ CL入荷フォーム の対象レコードを選択 → 請求書ファイルを
 対象レコードにファイルが添付され、アップロード済フラグ（済）が更新されます。
 
 📂 ディレクトリ構成
+
 project-root/
+
 ├── public/
+
 │   └── index.html        # 請求書アップロードフォーム（LIFF対応）
+
 ├── api/
+
 │   └── invoice-attach.js # ファイルアップロード処理 (Next.js API Routes)
+
 ├── package.json          # busboy 依存関係など
+
 └── README.md             # 本ドキュメント
 
 ⚙️ 動作仕様
