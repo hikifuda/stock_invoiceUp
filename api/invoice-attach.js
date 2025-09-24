@@ -10,8 +10,8 @@ export default async function handler(req, res) {
   const appId     = process.env.KINTONE_INBOUND_APP_ID;
   const token     = process.env.KINTONE_INBOUND_API_TOKEN;
   const fileField = process.env.KINTONE_FILE_FIELD || "invoiceFile";
-  const flagField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag"; // ← フィールドコード
-  const flagValue = process.env.KINTONE_UPLOADED_VALUE || "済";        // ← 記録する値
+  const flagField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag"; // 文字列(1行)
+  const flagValue = process.env.KINTONE_UPLOADED_VALUE || "済";
   const appendMode = (process.env.KINTONE_FILE_APPEND || "true").toLowerCase() === "true";
 
   try {
@@ -20,11 +20,14 @@ export default async function handler(req, res) {
     if (!recordId) return res.status(400).json({ message: "recordId is required" });
     if (!file)     return res.status(400).json({ message: "file is required" });
 
-    // 1) kintone ファイルアップロード
+    // ★ スマホ対策：フロントから送った origName を最優先で使用（Unicode 正常）
+    const origName = (fields?.origName || file.filename || "upload").toString().normalize("NFC");
+
+    // 1) kintone ファイルアップロード（UTF-8 filename* 対応）
     const fileKey = await uploadToKintoneFileAPI_UTF8({
       baseUrl, token,
-      filename: file.filename || "upload",
-      mimetype: file.mimetype,
+      filename: origName,                       // ← ここを origName に
+      mimetype: file.mimetype || "application/octet-stream",
       buffer: file.buffer
     });
 
@@ -41,7 +44,7 @@ export default async function handler(req, res) {
       baseUrl, appId, token, recordId,
       updates: {
         [fileField]: { value: filesForUpdate },
-        [flagField]: { value: flagValue }   // ← 済をセット
+        [flagField]: { value: flagValue }
       }
     });
 
@@ -52,7 +55,7 @@ export default async function handler(req, res) {
   }
 }
 
-/* ========== helpers (ファイル名UTF-8対応などは前回と同じ) ========== */
+/* ========== helpers ========== */
 
 function parseMultipart(req) {
   return new Promise((resolve, reject) => {
@@ -60,11 +63,13 @@ function parseMultipart(req) {
     const fields = {};
     let file = null;
 
+    // Busboy v1 新旧両API対応
     bb.on("file", (fieldname, stream, a, b, c) => {
       const info = (a && typeof a === "object" && ("filename" in a || "mimeType" in a)) ? a : null;
       const rawName = info ? info.filename : (typeof a === "string" ? a : "upload");
       const filename = sanitizeFilename(rawName);
-      const mimeType = info ? (info.mimeType || info.mime) : (typeof c === "string" ? c : "application/octet-stream");
+      const mimeType = info ? (info.mimeType || info.mime || "application/octet-stream")
+                            : (typeof c === "string" ? c : "application/octet-stream");
 
       const chunks = [];
       stream.on("data", d => chunks.push(d));
@@ -83,6 +88,7 @@ function sanitizeFilename(name) {
   return String(name || "upload").replace(/[\\\/:*?"<>|]+/g, "_").slice(0, 255) || "upload";
 }
 
+// RFC5987 エンコード
 function encodeRFC5987ValueChars(str) {
   return encodeURIComponent(str)
     .replace(/['()]/g, escape)
@@ -90,25 +96,38 @@ function encodeRFC5987ValueChars(str) {
     .replace(/%(7C|60|5E)/g, (m, p1) => '%' + p1.toLowerCase());
 }
 
+// kintone へ UTF-8 ファイル名で multipart 送信（filename* + ASCII fallback）
 async function uploadToKintoneFileAPI_UTF8({ baseUrl, token, filename, mimetype, buffer }) {
-  const boundary = "----kitoneFormData" + Math.random().toString(16).slice(2);
+  const boundary = "----kintoneFormData" + Math.random().toString(16).slice(2);
   const CRLF = "\r\n";
-  const asciiFallback = filename.replace(/[^\x20-\x7E]/g, "_");
-  const filenameStar = `UTF-8''${encodeRFC5987ValueChars(filename)}`;
+  const safeName = (filename || "upload").toString();
+  const asciiFallback = safeName.replace(/[^\x20-\x7E]/g, "_");            // 非ASCIIは _
+  const filenameStar = `UTF-8''${encodeRFC5987ValueChars(safeName)}`;      // RFC5987
 
+  // 両方送る：対応環境は filename*、非対応でも文字化けでなく ASCII 表示に落ちる
   const partHeaders =
     `Content-Disposition: form-data; name="file"; filename="${asciiFallback}"; filename*=${filenameStar}` + CRLF +
-    `Content-Type: ${mimetype}` + CRLF + CRLF;
+    `Content-Type: ${mimetype || "application/octet-stream"}` + CRLF +
+    `Content-Transfer-Encoding: binary` + CRLF + CRLF;
 
   const preamble = `--${boundary}` + CRLF + partHeaders;
   const closing  = CRLF + `--${boundary}--` + CRLF;
 
-  const body = Buffer.concat([ Buffer.from(preamble, "utf8"), buffer, Buffer.from(closing, "utf8") ]);
+  const body = Buffer.concat([
+    Buffer.from(preamble, "utf8"),
+    buffer,
+    Buffer.from(closing, "utf8"),
+  ]);
 
   const url = new URL("/k/v1/file.json", baseUrl).toString();
-  const r = await fetch(url, { method: "POST",
-    headers: { "X-Cybozu-API-Token": token, "Content-Type": `multipart/form-data; boundary=${boundary}` },
-    body });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "X-Cybozu-API-Token": token,
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    },
+    body,
+  });
   const out = await r.json().catch(() => ({}));
   if (!r.ok || !out.fileKey) throw new Error("kintone file upload failed: " + JSON.stringify(out));
   return out.fileKey;

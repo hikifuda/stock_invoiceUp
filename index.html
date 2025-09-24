@@ -154,6 +154,7 @@ document.getElementById("submit").addEventListener("click", async () => {
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
+  fd.append("origName", file.name);   // ★追加：正しいファイル名を同梱
 
   try {
     const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
