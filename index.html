@@ -6,14 +6,18 @@
   <title>請求書アップロード</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
+  </style>
 </head>
-<body class="grid place-items-center p-3 bg-slate-100">
-  <div class="phone-frame flex flex-col bg-white rounded-2xl shadow-lg w-[390px] max-w-full h-[844px]">
+<body class="min-h-[100svh] grid place-items-center p-3 bg-slate-100">
+  <!-- 本体カード -->
+  <div class="phone-frame flex flex-col bg-white rounded-2xl shadow-lg w-full max-w-[390px] min-h-[640px]">
     <header class="ios-safe bg-[#06C755] text-white px-4 pb-3 pt-6 rounded-t-2xl">
       <h1 class="text-base font-semibold">請求書アップロード</h1>
     </header>
 
-    <main class="flex-1 overflow-y-auto bg-slate-50 p-4 pb-28 space-y-4">
+    <main class="flex-1 overflow-y-auto bg-slate-50 p-4 pb-[88px] space-y-4">
       <!-- 対象レコード -->
       <section class="bg-white p-4 rounded-2xl shadow-sm">
         <h2 class="font-semibold">対象レコード</h2>
@@ -32,9 +36,11 @@
           class="h-11 px-3 mt-2 rounded-xl border bg-white file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:bg-slate-100" />
       </section>
     </main>
+  </div>
 
-    <!-- 送信ボタン -->
-    <div class="fixed bottom-0 left-1/2 -translate-x-1/2 w-[390px] max-w-[100vw] bg-white p-2 rounded-b-2xl">
+  <!-- 固定フッター（画面幅いっぱい・中身だけ中央寄せ） -->
+  <div class="fixed inset-x-0 bottom-0 bg-white/95 backdrop-blur">
+    <div class="mx-auto w-full max-w-[390px] p-2 pb-[calc(0.5rem+var(--safe-bottom))]">
       <button id="submit" class="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold">
         アップロード
       </button>
@@ -50,7 +56,7 @@
     </div>
   </div>
 
-  <!-- 全画面スピナー（アップロード用のみ） -->
+  <!-- 全画面スピナー（アップロード時のみ表示） -->
   <div id="spinner" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div>
   </div>
@@ -60,15 +66,11 @@ const LIFF_ID = "2008144627-bOAmoQo0";  // ← あなたの LIFF ID
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
-// ==== スピナー制御（全画面：アップロード用） ====
-function showSpinner() {
-  document.getElementById("spinner").classList.remove("hidden");
-}
-function hideSpinner() {
-  document.getElementById("spinner").classList.add("hidden");
-}
+/* スピナー（アップロード用） */
+function showSpinner(){ document.getElementById("spinner").classList.remove("hidden"); }
+function hideSpinner(){ document.getElementById("spinner").classList.add("hidden"); }
 
-// ==== レコード取得 ====
+/* レコード取得 */
 async function fetchRecords(uid) {
   if (!uid) return [];
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
@@ -88,12 +90,15 @@ function renderRecordList(records) {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "w-full text-left p-3 rounded-lg border hover:bg-slate-50";
+
     const date = r.baseDate || "-";
-    const itemsPreview = r.itemTable.slice(0,2).map(it => {
+    const itemsPreview = r.itemTable.slice(0, 2).map(it => {
       const lots = (it.designLot || []).join(",");
-      return `${it.itemName} × ${it.qty}${lots ? " ["+lots+"]":""}`;
+      // ← ここを修正：テンプレ内でさらに ${lots} を使わず、連結で組み立て
+      return `${it.itemName} × ${it.qty}${lots ? " [" + lots + "]" : ""}`;
     });
-    const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length-2}件` : "";
+    const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length - 2}件` : "";
+
     card.innerHTML = `
       <div class="font-semibold text-sm">#${r.recordId}　入荷予定日: ${date}</div>
       <div class="text-xs text-slate-600 mt-1">${itemsPreview.join(" / ")}${more}</div>
@@ -108,20 +113,17 @@ function renderRecordList(records) {
   });
 }
 
-// ==== モーダル ====
+/* モーダル：ミニスピナーをモーダル内に表示 */
 const modal = document.getElementById("recordModal");
 document.getElementById("openRecordList").addEventListener("click", async () => {
   modal.classList.remove("hidden");
-
   const listWrap = document.getElementById("recordList");
-  // 🔽 モーダル内専用ミニスピナーを表示
   listWrap.innerHTML = `
     <div class="flex flex-col items-center justify-center py-6 text-slate-500">
       <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-600"></div>
       <p class="mt-2 text-sm">読み込み中...</p>
     </div>
   `;
-
   try {
     if (!window._uid) await initUid();
     const recs = await fetchRecords(window._uid);
@@ -132,17 +134,16 @@ document.getElementById("openRecordList").addEventListener("click", async () => 
   }
 });
 document.getElementById("closeModal").addEventListener("click", closeModal);
-function closeModal() { modal.classList.add("hidden"); }
+function closeModal(){ modal.classList.add("hidden"); }
 
-// ==== ファイル送信 ====
+/* 送信（アップロード中は全画面スピナー） */
 document.getElementById("submit").addEventListener("click", async () => {
   const recId = document.getElementById("recordId").value;
   const file = document.getElementById("invoiceFile").files[0];
+  if (!recId){ alert("レコードを選択してください"); return; }
+  if (!file){ alert("ファイルを選択してください"); return; }
 
-  if (!recId) { alert("レコードを選択してください"); return; }
-  if (!file) { alert("ファイルを選択してください"); return; }
-
-  showSpinner(); // アップロード時だけ全画面スピナー
+  showSpinner();
 
   const fd = new FormData();
   fd.append("recordId", recId);
@@ -165,19 +166,19 @@ document.getElementById("submit").addEventListener("click", async () => {
   }
 });
 
-// ==== UID初期化 ====
-async function initUid() {
+/* UID 初期化 */
+async function initUid(){
   const qsUid = new URLSearchParams(location.search).get("uid");
-  if (qsUid) { window._uid = qsUid; return; }
+  if (qsUid){ window._uid = qsUid; return; }
   try {
     await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()) {
+    if (!liff.isLoggedIn()){
       liff.login({ redirectUri: location.href });
       return;
     }
     const profile = await liff.getProfile();
     window._uid = profile.userId;
-  } catch (e) {
+  } catch(e){
     console.warn("LIFF UID取得失敗。開発中は ?uid=xxx をURLに付けてください", e);
     window._uid = null;
   }
