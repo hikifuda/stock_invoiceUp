@@ -61,13 +61,21 @@ uploadFlag フィールドに「済」を設定
 🛠️ 必要な環境変数（Vercel Project Settings）
 変数名	説明	例
 KINTONE_BASE_URL	kintone サイトURL	https://xxxxx.cybozu.com
+
 KINTONE_INBOUND_APP_ID	CL入荷アプリのID	123
+
 KINTONE_INBOUND_API_TOKEN	CL入荷アプリ用APIトークン（読み書き権限）	xxxxxxxx
+
 KINTONE_FILE_FIELD	添付ファイルフィールドのフィールドコード	invoiceFile
+
 KINTONE_UPLOADED_FIELD	アップ済フラグ用フィールドコード	uploadFlag
+
 KINTONE_UPLOADED_VALUE	フラグに記録する文字列	済
+
 KINTONE_FILE_APPEND	既存ファイルに追記するか（true/false）	true
+
 LIFF_ID	LINE Developers で発行された LIFF ID	2008xxxxxx-xxxx
+
 📦 依存パッケージ
 {
   "dependencies": {
