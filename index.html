@@ -50,11 +50,17 @@
     </div>
   </div>
 
+  <!-- スピナー -->
+  <div id="spinner" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div>
+  </div>
+
 <script>
 const LIFF_ID = "2008144627-bOAmoQo0";  // ← LINE Developersで発行されたLIFF IDをここに直書き
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
+// ==== レコード取得 ====
 async function fetchRecords(uid) {
   if (!uid) return [];
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
@@ -94,7 +100,7 @@ function renderRecordList(records) {
   });
 }
 
-// モーダル開閉
+// ==== モーダル ====
 const modal = document.getElementById("recordModal");
 document.getElementById("openRecordList").addEventListener("click", async () => {
   modal.classList.remove("hidden");
@@ -105,27 +111,44 @@ document.getElementById("openRecordList").addEventListener("click", async () => 
 document.getElementById("closeModal").addEventListener("click", closeModal);
 function closeModal() { modal.classList.add("hidden"); }
 
-// ファイル送信
+// ==== スピナー制御 ====
+function showSpinner() {
+  document.getElementById("spinner").classList.remove("hidden");
+}
+function hideSpinner() {
+  document.getElementById("spinner").classList.add("hidden");
+}
+
+// ==== ファイル送信 ====
 document.getElementById("submit").addEventListener("click", async () => {
   const recId = document.getElementById("recordId").value;
   const file = document.getElementById("invoiceFile").files[0];
   if (!recId) { alert("レコードを選択してください"); return; }
   if (!file) { alert("ファイルを選択してください"); return; }
+
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
-  const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
-  if (res.ok) {
-    alert("アップロードしました");
-    document.getElementById("invoiceFile").value = "";
-    document.getElementById("recordSummary").textContent = "";
-    document.getElementById("recordId").value = "";
-  } else {
-    alert("アップロード失敗: " + (await res.text()));
+
+  showSpinner();
+  try {
+    const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
+    if (res.ok) {
+      alert("アップロードしました");
+      document.getElementById("invoiceFile").value = "";
+      document.getElementById("recordSummary").textContent = "";
+      document.getElementById("recordId").value = "";
+    } else {
+      alert("アップロード失敗: " + (await res.text()));
+    }
+  } catch (err) {
+    alert("エラー: " + err.message);
+  } finally {
+    hideSpinner();
   }
 });
 
-// ==== UIDの初期化（LIFF or ?uid=クエリ）====
+// ==== UID初期化 ====
 async function initUid() {
   const qsUid = new URLSearchParams(location.search).get("uid");
   if (qsUid) { window._uid = qsUid; return; }
