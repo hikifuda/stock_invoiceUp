@@ -8,55 +8,62 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
+
+    /* === ラバー無効 & レイアウト固定 === */
+    html, body { height: 100%; overscroll-behavior: none; }
+    body {
+      position: fixed; inset: 0;             /* 画面に固定（ビヨン防止） */
+      overflow: hidden;                       /* bodyはスクロールさせない */
+      background: #f1f5f9;                    /* slate-100 */
+    }
   </style>
 </head>
-<body class="min-h-[100svh] grid place-items-center p-3 bg-slate-100">
-  <!-- 本体カード -->
-  <div class="phone-frame flex flex-col bg-white rounded-2xl shadow-lg w-full max-w-[390px] min-h-[640px]">
-    <header class="ios-safe bg-[#06C755] text-white px-4 pb-3 pt-6 rounded-t-2xl">
-      <h1 class="text-base font-semibold">請求書アップロード</h1>
-    </header>
+<body>
+  <!-- ヘッダー（角丸なし・影なし） -->
+  <header class="bg-[#06C755] text-white px-4 pt-6 pb-3">
+    <h1 class="text-base font-semibold">請求書アップロード</h1>
+  </header>
 
-    <main class="flex-1 overflow-y-auto bg-slate-50 p-4 pb-[88px] space-y-4">
-      <!-- 対象レコード -->
-      <section class="bg-white p-4 rounded-2xl shadow-sm">
-        <h2 class="font-semibold">対象レコード</h2>
-        <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
-        <button id="openRecordList" type="button"
-          class="mt-2 px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium">
-          選択
-        </button>
-        <input type="hidden" id="recordId" />
-      </section>
+  <!-- 本文：ここだけ縦スクロール可能。ラバー対策に overscroll-contain -->
+  <main class="h-[calc(100svh-64px)] overflow-y-auto overscroll-contain pb-[96px] px-4">
+    <!-- 対象レコード -->
+    <section class="bg-white p-4 rounded-lg">
+      <h2 class="font-semibold">対象レコード</h2>
+      <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
+      <button id="openRecordList" type="button"
+        class="mt-2 px-4 py-2 rounded bg-emerald-600 text-white font-medium">
+        選択
+      </button>
+      <input type="hidden" id="recordId" />
+    </section>
 
-      <!-- 請求書ファイル -->
-      <section class="bg-white p-4 rounded-2xl shadow-sm">
-        <h3 class="font-semibold">請求書ファイル</h3>
-        <input id="invoiceFile" type="file" accept="application/pdf,image/*"
-          class="h-11 px-3 mt-2 rounded-xl border bg-white file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:bg-slate-100" />
-      </section>
-    </main>
-  </div>
+    <!-- 請求書ファイル -->
+    <section class="bg-white p-4 rounded-lg mt-4">
+      <h3 class="font-semibold">請求書ファイル</h3>
+      <input id="invoiceFile" type="file" accept="application/pdf,image/*"
+        class="h-11 px-3 mt-2 rounded border bg-white file:mr-3 file:px-3 file:py-2 file:rounded file:border file:bg-slate-100 w-full" />
+    </section>
+  </main>
 
-  <!-- 固定フッター（画面幅いっぱい・中身だけ中央寄せ） -->
-  <div class="fixed inset-x-0 bottom-0 bg-white/95 backdrop-blur">
-    <div class="mx-auto w-full max-w-[390px] p-2 pb-[calc(0.5rem+var(--safe-bottom))]">
-      <button id="submit" class="w-full h-12 rounded-xl bg-emerald-600 text-white font-semibold">
+  <!-- 固定フッター（画面幅いっぱい・セーフエリア考慮） -->
+  <div class="fixed inset-x-0 bottom-0 bg-white">
+    <div class="px-4 pt-2 pb-[calc(8px+var(--safe-bottom))]">
+      <button id="submit" class="w-full h-12 rounded bg-emerald-600 text-white font-semibold">
         アップロード
       </button>
     </div>
   </div>
 
-  <!-- モーダル -->
+  <!-- モーダル（中身だけスクロール・ミニスピナー） -->
   <div id="recordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white w-[90%] max-w-lg rounded-xl shadow-lg p-4 max-h-[80vh] overflow-y-auto">
+    <div class="bg-white w-[92%] max-w-md rounded-lg p-4 max-h-[80vh] overflow-y-auto overscroll-contain">
       <h3 class="font-semibold text-lg mb-3">レコードを選択</h3>
       <div id="recordList" class="space-y-2"></div>
-      <button id="closeModal" class="mt-4 w-full py-2 rounded-lg border">閉じる</button>
+      <button id="closeModal" class="mt-4 w-full py-2 rounded border">閉じる</button>
     </div>
   </div>
 
-  <!-- 全画面スピナー（アップロード時のみ表示） -->
+  <!-- 全画面スピナー（アップロード時のみ使用） -->
   <div id="spinner" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div>
   </div>
@@ -89,12 +96,11 @@ function renderRecordList(records) {
   records.forEach(r => {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = "w-full text-left p-3 rounded-lg border hover:bg-slate-50";
+    card.className = "w-full text-left p-3 rounded border hover:bg-slate-50";
 
     const date = r.baseDate || "-";
     const itemsPreview = r.itemTable.slice(0, 2).map(it => {
       const lots = (it.designLot || []).join(",");
-      // ← ここを修正：テンプレ内でさらに ${lots} を使わず、連結で組み立て
       return `${it.itemName} × ${it.qty}${lots ? " [" + lots + "]" : ""}`;
     });
     const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length - 2}件` : "";
@@ -113,7 +119,7 @@ function renderRecordList(records) {
   });
 }
 
-/* モーダル：ミニスピナーをモーダル内に表示 */
+/* モーダル：ミニスピナーを中に表示 */
 const modal = document.getElementById("recordModal");
 document.getElementById("openRecordList").addEventListener("click", async () => {
   modal.classList.remove("hidden");
