@@ -123,14 +123,17 @@ function hideSpinner() {
 document.getElementById("submit").addEventListener("click", async () => {
   const recId = document.getElementById("recordId").value;
   const file = document.getElementById("invoiceFile").files[0];
+
   if (!recId) { alert("レコードを選択してください"); return; }
   if (!file) { alert("ファイルを選択してください"); return; }
+
+  // ✅ バリデーション通過後すぐにスピナーを表示
+  showSpinner();
 
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
 
-  showSpinner();
   try {
     const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
     if (res.ok) {
