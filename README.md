@@ -10,11 +10,9 @@ CL入荷フォーム の対象レコードを選択 → 請求書ファイルを
 
 📂 ディレクトリ構成
 
-project-root/
+project-root/             # 請求書アップロードフォーム（LIFF対応）
 
-├── public/
-
-│   └── index.html        # 請求書アップロードフォーム（LIFF対応）
+├── index.html
 
 ├── api/
 
