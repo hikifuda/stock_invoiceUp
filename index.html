@@ -28,7 +28,7 @@
   <main class="h-[calc(100svh-64px)] overflow-y-auto overscroll-contain pb-[96px] px-4">
     <!-- 対象レコード -->
     <section class="bg-white p-4 rounded-lg">
-      <h2 class="font-semibold">対象レコード</h2>
+      <h2 class="font-semibold">添付する対象の入荷データを選択してください</h2>
       <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
       <button id="openRecordList" type="button"
         class="mt-2 px-4 py-2 rounded bg-emerald-600 text-white font-medium">
@@ -57,7 +57,7 @@
   <!-- モーダル（中身だけスクロール・ミニスピナー） -->
   <div id="recordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="bg-white w-[92%] max-w-md rounded-lg p-4 max-h-[80vh] overflow-y-auto overscroll-contain">
-      <h3 class="font-semibold text-lg mb-3">レコードを選択</h3>
+      <h3 class="font-semibold text-lg mb-3">対象入荷データを選択</h3>
       <div id="recordList" class="space-y-2"></div>
       <button id="closeModal" class="mt-4 w-full py-2 rounded border">閉じる</button>
     </div>
@@ -90,7 +90,7 @@ function renderRecordList(records) {
   const wrap = document.getElementById("recordList");
   wrap.innerHTML = "";
   if (!records.length) {
-    wrap.innerHTML = "<p class='text-sm text-slate-500 text-center py-4'>対象レコードはありません</p>";
+    wrap.innerHTML = "<p class='text-sm text-slate-500 text-center py-4'>対象入荷データはありません</p>";
     return;
   }
   records.forEach(r => {
