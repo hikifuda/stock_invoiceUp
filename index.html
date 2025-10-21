@@ -8,44 +8,60 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
-
-    /* === ラバー無効 & レイアウト固定 === */
     html, body { height: 100%; overscroll-behavior: none; }
     body {
-      position: fixed; inset: 0;             /* 画面に固定（ビヨン防止） */
-      overflow: hidden;                       /* bodyはスクロールさせない */
-      background: #f1f5f9;                    /* slate-100 */
+      position: fixed; inset: 0;
+      overflow: hidden;
+      background: #f1f5f9;
     }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
-  <!-- ヘッダー（角丸なし・影なし） -->
+  <!-- ヘッダー -->
   <header class="bg-[#06C755] text-white px-4 pt-6 pb-3">
     <h1 class="text-base font-semibold">請求書アップロード</h1>
   </header>
 
-  <!-- 本文：ここだけ縦スクロール可能。ラバー対策に overscroll-contain -->
+  <!-- タブ -->
+  <nav id="tabs" class="flex border-b border-slate-300 bg-white">
+    <button data-tab="upload" class="flex-1 py-2 border-b-2 border-emerald-600 text-emerald-600 font-semibold">
+      請求書アップロード
+    </button>
+    <button data-tab="history" class="flex-1 py-2 border-b-2 border-transparent text-slate-500 font-semibold">
+      履歴
+    </button>
+  </nav>
+
+  <!-- 本文 -->
   <main class="h-[calc(100svh-64px)] overflow-y-auto overscroll-contain pb-[96px] px-4">
-    <!-- 対象レコード -->
-    <section class="bg-white p-4 rounded-lg">
-      <h2 class="font-semibold">添付する対象の入荷データを選択してください</h2>
-      <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
-      <button id="openRecordList" type="button"
-        class="mt-2 px-4 py-2 rounded bg-emerald-600 text-white font-medium">
-        選択
-      </button>
-      <input type="hidden" id="recordId" />
+
+    <!-- ▼アップロードタブ -->
+    <section id="tab-upload" class="tab-panel block">
+      <section class="bg-white p-4 rounded-lg">
+        <h2 class="font-semibold">添付する対象の入荷データを選択してください</h2>
+        <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
+        <button id="openRecordList" type="button"
+          class="mt-2 px-4 py-2 rounded bg-emerald-600 text-white font-medium">
+          選択
+        </button>
+        <input type="hidden" id="recordId" />
+      </section>
+
+      <section class="bg-white p-4 rounded-lg mt-4">
+        <h3 class="font-semibold">請求書ファイル</h3>
+        <input id="invoiceFile" type="file" accept="application/pdf,image/*"
+          class="h-11 px-3 mt-2 rounded border bg-white file:mr-3 file:px-3 file:py-2 file:rounded file:border file:bg-slate-100 w-full" />
+      </section>
     </section>
 
-    <!-- 請求書ファイル -->
-    <section class="bg-white p-4 rounded-lg mt-4">
-      <h3 class="font-semibold">請求書ファイル</h3>
-      <input id="invoiceFile" type="file" accept="application/pdf,image/*"
-        class="h-11 px-3 mt-2 rounded border bg-white file:mr-3 file:px-3 file:py-2 file:rounded file:border file:bg-slate-100 w-full" />
+    <!-- ▼履歴タブ -->
+    <section id="tab-history" class="tab-panel hidden">
+      <div id="historyArea" class="p-4 text-sm text-slate-700">読み込み中...</div>
     </section>
   </main>
 
-  <!-- 固定フッター（画面幅いっぱい・セーフエリア考慮） -->
+  <!-- フッター -->
   <div class="fixed inset-x-0 bottom-0 bg-white">
     <div class="px-4 pt-2 pb-[calc(8px+var(--safe-bottom))]">
       <button id="submit" class="w-full h-12 rounded bg-emerald-600 text-white font-semibold">
@@ -54,7 +70,7 @@
     </div>
   </div>
 
-  <!-- モーダル（中身だけスクロール・ミニスピナー） -->
+  <!-- モーダル -->
   <div id="recordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="bg-white w-[92%] max-w-md rounded-lg p-4 max-h-[80vh] overflow-y-auto overscroll-contain">
       <h3 class="font-semibold text-lg mb-3">対象入荷データを選択</h3>
@@ -63,21 +79,37 @@
     </div>
   </div>
 
-  <!-- 全画面スピナー（アップロード時のみ使用） -->
+  <!-- スピナー -->
   <div id="spinner" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div>
   </div>
 
 <script>
-const LIFF_ID = "2008144627-bOAmoQo0";  // ← あなたの LIFF ID
+const LIFF_ID = "2008144627-bOAmoQo0";
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
-/* スピナー（アップロード用） */
+/* ======= スピナー ======= */
 function showSpinner(){ document.getElementById("spinner").classList.remove("hidden"); }
 function hideSpinner(){ document.getElementById("spinner").classList.add("hidden"); }
 
-/* レコード取得 */
+/* ======= LIFF UID ======= */
+async function initUid(){
+  const qsUid = new URLSearchParams(location.search).get("uid");
+  if (qsUid){ window._uid = qsUid; return; }
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()){ liff.login({ redirectUri: location.href }); return; }
+    const profile = await liff.getProfile();
+    window._uid = profile.userId;
+  } catch(e){
+    console.warn("LIFF UID取得失敗", e);
+    window._uid = null;
+  }
+}
+initUid();
+
+/* ======= レコード取得 ======= */
 async function fetchRecords(uid) {
   if (!uid) return [];
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
@@ -85,7 +117,6 @@ async function fetchRecords(uid) {
   try { data = await res.json(); } catch {}
   return Array.isArray(data.records) ? data.records : [];
 }
-
 function renderRecordList(records) {
   const wrap = document.getElementById("recordList");
   wrap.innerHTML = "";
@@ -97,18 +128,15 @@ function renderRecordList(records) {
     const card = document.createElement("button");
     card.type = "button";
     card.className = "w-full text-left p-3 rounded border hover:bg-slate-50";
-
     const date = r.baseDate || "-";
     const itemsPreview = r.itemTable.slice(0, 2).map(it => {
       const lots = (it.designLot || []).join(",");
       return `${it.itemName} × ${it.qty}${lots ? " [" + lots + "]" : ""}`;
     });
     const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length - 2}件` : "";
-
     card.innerHTML = `
       <div class="font-semibold text-sm">#${r.recordId}　入荷予定日: ${date}</div>
-      <div class="text-xs text-slate-600 mt-1">${itemsPreview.join(" / ")}${more}</div>
-    `;
+      <div class="text-xs text-slate-600 mt-1">${itemsPreview.join(" / ")}${more}</div>`;
     card.addEventListener("click", () => {
       document.getElementById("recordId").value = r.recordId;
       document.getElementById("recordSummary").textContent =
@@ -119,7 +147,7 @@ function renderRecordList(records) {
   });
 }
 
-/* モーダル：ミニスピナーを中に表示 */
+/* ======= モーダル制御 ======= */
 const modal = document.getElementById("recordModal");
 document.getElementById("openRecordList").addEventListener("click", async () => {
   modal.classList.remove("hidden");
@@ -128,34 +156,28 @@ document.getElementById("openRecordList").addEventListener("click", async () => 
     <div class="flex flex-col items-center justify-center py-6 text-slate-500">
       <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-600"></div>
       <p class="mt-2 text-sm">読み込み中...</p>
-    </div>
-  `;
+    </div>`;
   try {
     if (!window._uid) await initUid();
     const recs = await fetchRecords(window._uid);
     renderRecordList(recs);
-  } catch (e) {
-    console.warn(e);
-    listWrap.innerHTML = "<p class='text-sm text-rose-600 text-center py-4'>読み込みに失敗しました。再度お試しください。</p>";
+  } catch {
+    listWrap.innerHTML = "<p class='text-sm text-rose-600 text-center py-4'>読み込みに失敗しました。</p>";
   }
 });
-document.getElementById("closeModal").addEventListener("click", closeModal);
-function closeModal(){ modal.classList.add("hidden"); }
+document.getElementById("closeModal").addEventListener("click", ()=>modal.classList.add("hidden"));
 
-/* 送信（アップロード中は全画面スピナー） */
+/* ======= アップロード ======= */
 document.getElementById("submit").addEventListener("click", async () => {
   const recId = document.getElementById("recordId").value;
   const file = document.getElementById("invoiceFile").files[0];
   if (!recId){ alert("レコードを選択してください"); return; }
   if (!file){ alert("ファイルを選択してください"); return; }
-
   showSpinner();
-
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
-  fd.append("origName", file.name);   // ★追加：正しいファイル名を同梱
-
+  fd.append("origName", file.name);
   try {
     const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
     if (res.ok) {
@@ -173,24 +195,70 @@ document.getElementById("submit").addEventListener("click", async () => {
   }
 });
 
-/* UID 初期化 */
-async function initUid(){
-  const qsUid = new URLSearchParams(location.search).get("uid");
-  if (qsUid){ window._uid = qsUid; return; }
+/* ======= タブ切替 ======= */
+document.querySelectorAll('#tabs button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tabs button').forEach(b =>
+      b.classList.remove('text-emerald-600','border-emerald-600','font-semibold'));
+    btn.classList.add('text-emerald-600','border-emerald-600','font-semibold');
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    document.querySelector(`#tab-${btn.dataset.tab}`).classList.remove('hidden');
+    if (btn.dataset.tab === 'history') loadHistory();
+  });
+});
+
+/* ======= 履歴ロード ======= */
+async function loadHistory(){
+  const el = document.getElementById("historyArea");
+  el.innerHTML = "<p>読み込み中...</p>";
+  if (!window._uid){ await initUid(); }
+  if (!window._uid){ el.textContent = "UID未登録のため履歴を表示できません"; return; }
   try {
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()){
-      liff.login({ redirectUri: location.href });
+    const resCompany = await fetch(`/api/uid-resolve?uid=${window._uid}`);
+    if (!resCompany.ok) throw new Error("companyId取得失敗");
+    const { companyId } = await resCompany.json();
+    const res = await fetch(`/api/history-list?companyId=${companyId}`);
+    if (!res.ok) throw new Error("履歴取得失敗");
+    const { items } = await res.json();
+    if (!items.length){
+      el.innerHTML = "<p class='text-center text-slate-400 py-8'>履歴はまだありません</p>";
       return;
     }
-    const profile = await liff.getProfile();
-    window._uid = profile.userId;
+    const rows = items.map(it => {
+      const date = new Date(it.createdAt).toLocaleString("ja-JP");
+      const planned = it.plannedDate ? new Date(it.plannedDate).toLocaleDateString("ja-JP") : "-";
+      const cancelBtn = it.isCanceled
+        ? `<span class='text-slate-400'>取消済</span>`
+        : `<button class='px-2 py-1 bg-rose-500 text-white text-xs rounded' data-id='${it.recordId}'>取消</button>`;
+      return `<tr>
+        <td>${date}</td><td>${planned}</td><td>${it.slipNo||"-"}</td>
+        <td>${it.qtySum||0}</td><td>${it.status||"-"}</td><td>${cancelBtn}</td>
+      </tr>`;
+    }).join("");
+    el.innerHTML = `
+      <table class="w-full border text-sm">
+        <thead class="bg-slate-100 text-slate-700">
+          <tr><th>受付日時</th><th>入荷予定日</th><th>伝票番号</th><th>数量</th><th>ステータス</th><th>操作</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    el.querySelectorAll("button[data-id]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!confirm("取消しますか？")) return;
+        const id = btn.dataset.id;
+        const res = await fetch("/api/history-cancel", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ recordId:id, uid:window._uid })
+        });
+        if (res.ok){ alert("取消しました"); loadHistory(); }
+        else { alert("取消失敗: " + (await res.text())); }
+      });
+    });
   } catch(e){
-    console.warn("LIFF UID取得失敗。開発中は ?uid=xxx をURLに付けてください", e);
-    window._uid = null;
+    el.textContent = "履歴の読み込みに失敗しました";
   }
 }
-initUid();
 </script>
 </body>
 </html>
