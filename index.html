@@ -8,32 +8,24 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
-
-    /* === ラバー無効 & レイアウト固定 === */
     html, body { height: 100%; overscroll-behavior: none; }
     body {
-      position: fixed; inset: 0;             /* 画面に固定（ビヨン防止） */
-      overflow: hidden;                       /* bodyはスクロールさせない */
-      background: #f1f5f9;                    /* slate-100 */
+      position: fixed; inset: 0;
+      overflow: hidden;
+      background: #f1f5f9;
     }
   </style>
 </head>
 <body>
-  <!-- ヘッダー（角丸なし・影なし） -->
   <header class="bg-[#06C755] text-white px-4 pt-6 pb-3">
     <h1 class="text-base font-semibold">請求書アップロード</h1>
   </header>
 
-  <!-- 本文：ここだけ縦スクロール可能。ラバー対策に overscroll-contain -->
   <main class="h-[calc(100svh-64px)] overflow-y-auto overscroll-contain pb-[96px] px-4">
     <!-- 対象レコード -->
     <section class="bg-white p-4 rounded-lg">
-      <h2 class="font-semibold">添付する対象の入荷データを選択してください</h2>
-      <div id="recordSummary" class="text-sm text-slate-600 mt-1"></div>
-      <button id="openRecordList" type="button"
-        class="mt-2 px-4 py-2 rounded bg-emerald-600 text-white font-medium">
-        選択
-      </button>
+      <h2 class="font-semibold mb-2">添付する対象の入荷データ</h2>
+      <div id="recordSummary" class="text-sm text-slate-600"></div>
       <input type="hidden" id="recordId" />
     </section>
 
@@ -45,7 +37,6 @@
     </section>
   </main>
 
-  <!-- 固定フッター（画面幅いっぱい・セーフエリア考慮） -->
   <div class="fixed inset-x-0 bottom-0 bg-white">
     <div class="px-4 pt-2 pb-[calc(8px+var(--safe-bottom))]">
       <button id="submit" class="w-full h-12 rounded bg-emerald-600 text-white font-semibold">
@@ -54,30 +45,19 @@
     </div>
   </div>
 
-  <!-- モーダル（中身だけスクロール・ミニスピナー） -->
-  <div id="recordModal" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white w-[92%] max-w-md rounded-lg p-4 max-h-[80vh] overflow-y-auto overscroll-contain">
-      <h3 class="font-semibold text-lg mb-3">対象入荷データを選択</h3>
-      <div id="recordList" class="space-y-2"></div>
-      <button id="closeModal" class="mt-4 w-full py-2 rounded border">閉じる</button>
-    </div>
-  </div>
-
-  <!-- 全画面スピナー（アップロード時のみ使用） -->
   <div id="spinner" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-white"></div>
   </div>
 
 <script>
-const LIFF_ID = "2008144627-bOAmoQo0";  // ← あなたの LIFF ID
+const LIFF_ID = "2008144627-bOAmoQo0";
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
-/* スピナー（アップロード用） */
 function showSpinner(){ document.getElementById("spinner").classList.remove("hidden"); }
 function hideSpinner(){ document.getElementById("spinner").classList.add("hidden"); }
 
-/* レコード取得 */
+/* === レコード取得 === */
 async function fetchRecords(uid) {
   if (!uid) return [];
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
@@ -86,8 +66,9 @@ async function fetchRecords(uid) {
   return Array.isArray(data.records) ? data.records : [];
 }
 
+/* === 一覧を画面に直接描画 === */
 function renderRecordList(records) {
-  const wrap = document.getElementById("recordList");
+  const wrap = document.getElementById("recordSummary");
   wrap.innerHTML = "";
   if (!records.length) {
     wrap.innerHTML = "<p class='text-sm text-slate-500 text-center py-4'>対象入荷データはありません</p>";
@@ -96,7 +77,7 @@ function renderRecordList(records) {
   records.forEach(r => {
     const card = document.createElement("button");
     card.type = "button";
-    card.className = "w-full text-left p-3 rounded border hover:bg-slate-50";
+    card.className = "block w-full text-left p-3 mb-2 rounded border hover:bg-slate-50";
 
     const date = r.baseDate || "-";
     const itemsPreview = r.itemTable.slice(0, 2).map(it => {
@@ -111,38 +92,14 @@ function renderRecordList(records) {
     `;
     card.addEventListener("click", () => {
       document.getElementById("recordId").value = r.recordId;
-      document.getElementById("recordSummary").textContent =
-        `#${r.recordId} / 入荷予定日:${date} / ${itemsPreview.join(" / ")}${more}`;
-      closeModal();
+      document.querySelectorAll("#recordSummary button").forEach(b => b.classList.remove("bg-emerald-50","border-emerald-500"));
+      card.classList.add("bg-emerald-50","border-emerald-500");
     });
     wrap.appendChild(card);
   });
 }
 
-/* モーダル：ミニスピナーを中に表示 */
-const modal = document.getElementById("recordModal");
-document.getElementById("openRecordList").addEventListener("click", async () => {
-  modal.classList.remove("hidden");
-  const listWrap = document.getElementById("recordList");
-  listWrap.innerHTML = `
-    <div class="flex flex-col items-center justify-center py-6 text-slate-500">
-      <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-600"></div>
-      <p class="mt-2 text-sm">読み込み中...</p>
-    </div>
-  `;
-  try {
-    if (!window._uid) await initUid();
-    const recs = await fetchRecords(window._uid);
-    renderRecordList(recs);
-  } catch (e) {
-    console.warn(e);
-    listWrap.innerHTML = "<p class='text-sm text-rose-600 text-center py-4'>読み込みに失敗しました。再度お試しください。</p>";
-  }
-});
-document.getElementById("closeModal").addEventListener("click", closeModal);
-function closeModal(){ modal.classList.add("hidden"); }
-
-/* 送信（アップロード中は全画面スピナー） */
+/* === アップロード処理 === */
 document.getElementById("submit").addEventListener("click", async () => {
   const recId = document.getElementById("recordId").value;
   const file = document.getElementById("invoiceFile").files[0];
@@ -150,19 +107,21 @@ document.getElementById("submit").addEventListener("click", async () => {
   if (!file){ alert("ファイルを選択してください"); return; }
 
   showSpinner();
-
   const fd = new FormData();
   fd.append("recordId", recId);
   fd.append("file", file, file.name);
-  fd.append("origName", file.name);   // ★追加：正しいファイル名を同梱
+  fd.append("origName", file.name);
 
   try {
     const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
     if (res.ok) {
       alert("アップロードしました");
       document.getElementById("invoiceFile").value = "";
-      document.getElementById("recordSummary").textContent = "";
       document.getElementById("recordId").value = "";
+      document.getElementById("recordSummary").innerHTML = "";
+      // 再読み込みして更新
+      const recs = await fetchRecords(window._uid);
+      renderRecordList(recs);
     } else {
       alert("アップロード失敗: " + (await res.text()));
     }
@@ -173,21 +132,40 @@ document.getElementById("submit").addEventListener("click", async () => {
   }
 });
 
-/* UID 初期化 */
+/* === UID初期化後に自動ロード === */
 async function initUid(){
   const qsUid = new URLSearchParams(location.search).get("uid");
-  if (qsUid){ window._uid = qsUid; return; }
-  try {
-    await liff.init({ liffId: LIFF_ID });
-    if (!liff.isLoggedIn()){
-      liff.login({ redirectUri: location.href });
-      return;
+  if (qsUid){ window._uid = qsUid; }
+  else {
+    try {
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()){
+        liff.login({ redirectUri: location.href });
+        return;
+      }
+      const profile = await liff.getProfile();
+      window._uid = profile.userId;
+    } catch(e){
+      console.warn("LIFF UID取得失敗", e);
+      window._uid = null;
     }
-    const profile = await liff.getProfile();
-    window._uid = profile.userId;
-  } catch(e){
-    console.warn("LIFF UID取得失敗。開発中は ?uid=xxx をURLに付けてください", e);
-    window._uid = null;
+  }
+
+  // ✅ UIDが取得できたら自動でリストを描画
+  const wrap = document.getElementById("recordSummary");
+  wrap.innerHTML = `
+    <div class="flex flex-col items-center justify-center py-6 text-slate-500">
+      <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-emerald-600"></div>
+      <p class="mt-2 text-sm">読み込み中...</p>
+    </div>
+  `;
+  if (window._uid) {
+    try {
+      const recs = await fetchRecords(window._uid);
+      renderRecordList(recs);
+    } catch (err) {
+      wrap.innerHTML = "<p class='text-sm text-rose-600 text-center py-4'>読み込みに失敗しました。</p>";
+    }
   }
 }
 initUid();
