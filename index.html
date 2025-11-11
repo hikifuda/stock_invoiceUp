@@ -22,14 +22,12 @@
   </header>
 
   <main class="h-[calc(100svh-64px)] overflow-y-auto overscroll-contain pb-[96px] px-4">
-    <!-- 対象レコード -->
     <section class="bg-white p-4 rounded-lg">
       <h2 class="font-semibold mb-2">添付する対象の入荷データ</h2>
       <div id="recordSummary" class="text-sm text-slate-600"></div>
       <input type="hidden" id="recordId" />
     </section>
 
-    <!-- 請求書ファイル -->
     <section class="bg-white p-4 rounded-lg mt-4">
       <h3 class="font-semibold">請求書ファイル</h3>
       <input id="invoiceFile" type="file" accept="application/pdf,image/*"
@@ -54,10 +52,11 @@ const LIFF_ID = "2008144627-bOAmoQo0";
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
+/* --- Spinner --- */
 function showSpinner(){ document.getElementById("spinner").classList.remove("hidden"); }
 function hideSpinner(){ document.getElementById("spinner").classList.add("hidden"); }
 
-/* === レコード取得 === */
+/* --- レコード取得 --- */
 async function fetchRecords(uid) {
   if (!uid) return [];
   const res = await fetch(`${SEARCH_ENDPOINT}?uid=${encodeURIComponent(uid)}`);
@@ -66,7 +65,7 @@ async function fetchRecords(uid) {
   return Array.isArray(data.records) ? data.records : [];
 }
 
-/* === 一覧を画面に直接描画 === */
+/* --- レコードリスト描画 --- */
 function renderRecordList(records) {
   const wrap = document.getElementById("recordSummary");
   wrap.innerHTML = "";
@@ -99,7 +98,7 @@ function renderRecordList(records) {
   });
 }
 
-/* === アップロード処理 === */
+/* --- アップロード処理 --- */
 document.getElementById("submit").addEventListener("click", async () => {
   const recId = document.getElementById("recordId").value;
   const file = document.getElementById("invoiceFile").files[0];
@@ -116,10 +115,21 @@ document.getElementById("submit").addEventListener("click", async () => {
     const res = await fetch(ATTACH_ENDPOINT, { method:"POST", body: fd });
     if (res.ok) {
       alert("アップロードしました");
+
+      // ✅ Slack通知呼び出し（LINE名を含む）
+      await fetch("/api/invoice-notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recordId: recId,
+          fileName: file.name,
+          userName: window._displayName || "不明ユーザー"
+        }),
+      });
+
       document.getElementById("invoiceFile").value = "";
       document.getElementById("recordId").value = "";
       document.getElementById("recordSummary").innerHTML = "";
-      // 再読み込みして更新
       const recs = await fetchRecords(window._uid);
       renderRecordList(recs);
     } else {
@@ -132,7 +142,7 @@ document.getElementById("submit").addEventListener("click", async () => {
   }
 });
 
-/* === UID初期化後に自動ロード === */
+/* --- UID & DisplayName 初期化 --- */
 async function initUid(){
   const qsUid = new URLSearchParams(location.search).get("uid");
   if (qsUid){ window._uid = qsUid; }
@@ -145,13 +155,14 @@ async function initUid(){
       }
       const profile = await liff.getProfile();
       window._uid = profile.userId;
+      window._displayName = profile.displayName; // ✅ 追加：Slack通知用
     } catch(e){
       console.warn("LIFF UID取得失敗", e);
       window._uid = null;
+      window._displayName = null;
     }
   }
 
-  // ✅ UIDが取得できたら自動でリストを描画
   const wrap = document.getElementById("recordSummary");
   wrap.innerHTML = `
     <div class="flex flex-col items-center justify-center py-6 text-slate-500">
