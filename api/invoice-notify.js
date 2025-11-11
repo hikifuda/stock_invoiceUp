@@ -24,6 +24,7 @@ export default async function handler(req, res) {
 
     const companyName = record.companyName?.value || "不明";
     const planDate = record.baseDate?.value || "-";
+    const recordNo = record.レコード番号?.value || recordId;  // ✅ レコード番号
     const recordUrl = `${baseUrl}/k/${appId}/show#record=${recordId}`;
 
     // === Slack通知 ===
@@ -38,6 +39,7 @@ export default async function handler(req, res) {
             `*送信者*: ${userName || "不明ユーザー"}\n` +
             `*会社名*: ${companyName}\n` +
             `*入荷予定日*: ${planDate}\n` +
+            `*レコード番号*: ${recordNo}\n` +  // ✅ 追加
             `*ファイル名*: ${fileName}`,
         },
       },
