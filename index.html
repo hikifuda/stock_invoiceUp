@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>請求書アップロード</title>
-  <script src="httpshttps://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <style>
     :root { --safe-bottom: env(safe-area-inset-bottom, 0px); }
@@ -52,6 +52,7 @@ const LIFF_ID = "2008144627-bOAmoQo0";
 const SEARCH_ENDPOINT = "/api/search";
 const ATTACH_ENDPOINT = "/api/invoice-attach";
 
+/* --- Spinner --- */
 function showSpinner(){ document.getElementById("spinner").classList.remove("hidden"); }
 function hideSpinner(){ document.getElementById("spinner").classList.add("hidden"); }
 
@@ -64,7 +65,7 @@ async function fetchRecords(uid) {
   return Array.isArray(data.records) ? data.records : [];
 }
 
-/* --- レコードリスト描画（改修版） --- */
+/* --- レコードリスト描画（必要差分のみ追加） --- */
 function renderRecordList(records) {
   const wrap = document.getElementById("recordSummary");
   wrap.innerHTML = "";
@@ -72,7 +73,6 @@ function renderRecordList(records) {
     wrap.innerHTML = "<p class='text-sm text-slate-500 text-center py-4'>対象入荷データはありません</p>";
     return;
   }
-
   records.forEach(r => {
     const card = document.createElement("button");
     card.type = "button";
@@ -80,39 +80,34 @@ function renderRecordList(records) {
 
     const date = r.baseDate || "-";
 
-    /* --- ステータス表示 --- */
-    const status =
-      r.uploadFlag === "済"
-        ? `<span class="ml-2 text-emerald-600 font-semibold text-xs">アップロード済</span>`
-        : "";
+    // ★★★ uploadFlag が済ならステータスを追加
+    const status = r.uploadFlag === "済"
+      ? `<span class="ml-2 text-emerald-600 font-semibold text-xs">アップロード済</span>`
+      : "";
 
-    /* --- 添付ファイル名表示 --- */
-    const fileName =
-      r.invoiceFile && r.invoiceFile.length
-        ? `<div class="text-xs text-slate-500 mt-1">📎 ${r.invoiceFile[0].name}</div>`
-        : "";
+    // ★★★ 添付ファイルがある場合はファイル名を追加
+    const fileName = (r.invoiceFile && r.invoiceFile.length)
+      ? `<div class="text-xs text-slate-500 mt-1">📎 ${r.invoiceFile[0].name}</div>`
+      : "";
 
-    /* --- アイテムプレビュー --- */
     const itemsPreview = r.itemTable.slice(0, 2).map(it => {
       const lots = (it.designLot || []).join(",");
       return `${it.itemName} × ${it.qty}${lots ? " [" + lots + "]" : ""}`;
     });
     const more = r.itemTable.length > 2 ? ` 他${r.itemTable.length - 2}件` : "";
 
+    // ★★★ デザインを壊さず既存に2行だけ足す
     card.innerHTML = `
-      <div class="font-semibold text-sm">#${r.recordId} 入荷予定日: ${date}${status}</div>
+      <div class="font-semibold text-sm">#${r.recordId}　入荷予定日: ${date}${status}</div>
       <div class="text-xs text-slate-600 mt-1">${itemsPreview.join(" / ")}${more}</div>
       ${fileName}
     `;
 
     card.addEventListener("click", () => {
       document.getElementById("recordId").value = r.recordId;
-      document.querySelectorAll("#recordSummary button").forEach(b =>
-        b.classList.remove("bg-emerald-50","border-emerald-500")
-      );
+      document.querySelectorAll("#recordSummary button").forEach(b => b.classList.remove("bg-emerald-50","border-emerald-500"));
       card.classList.add("bg-emerald-50","border-emerald-500");
     });
-
     wrap.appendChild(card);
   });
 }
@@ -148,7 +143,6 @@ document.getElementById("submit").addEventListener("click", async () => {
       document.getElementById("invoiceFile").value = "";
       document.getElementById("recordId").value = "";
       document.getElementById("recordSummary").innerHTML = "";
-
       const recs = await fetchRecords(window._uid);
       renderRecordList(recs);
 
