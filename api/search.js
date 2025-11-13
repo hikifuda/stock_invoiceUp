@@ -1,6 +1,5 @@
 // /api/search.js
-// UIDマスタで companyId を引き、その companyId に紐づく CL入荷レコードを返す
-// アップ済みフラグ（文字列1行, 値="済"）は除外
+// UID → companyId を引き、CL入荷から条件一致レコードを返す（最小差分対応版）
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ message: "Method Not Allowed" });
@@ -10,20 +9,21 @@ export default async function handler(req, res) {
 
   const baseUrl = process.env.KINTONE_BASE_URL;
 
-  // UIDマスタ用
+  // UIDマスタ
   const uidAppId   = process.env.KINTONE_UID_APP_ID;
   const uidToken   = process.env.KINTONE_UID_API_TOKEN;
   const uidField   = process.env.KINTONE_UID_FIELD || "uId";
   const companyIdField = process.env.KINTONE_COMPANYID_FIELD || "companyId";
 
-  // CL入荷アプリ用
+  // CL入荷
   const inboundAppId = process.env.KINTONE_INBOUND_APP_ID;
   const inboundToken = process.env.KINTONE_INBOUND_API_TOKEN;
   const inboundCompanyIdField = process.env.KINTONE_INBOUND_COMPANYID_FIELD || "companyId";
 
-  // アップ済みフラグ（文字列1行）
-  const uploadedField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag";
-  const uploadedValue = process.env.KINTONE_UPLOADED_VALUE || "済";
+  // フラグ系
+  const uploadedField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag";   // uploadFlag
+  const uploadedValue = process.env.KINTONE_UPLOADED_VALUE || "済";          // "済"
+  const unitPriceFlagField = "unitPriceFlag";                                // チェックボックス
 
   if (!baseUrl || !uidAppId || !uidToken || !inboundAppId || !inboundToken) {
     return res.status(500).json({ message: "env vars not set" });
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     uidUrl.search = new URLSearchParams({ app: String(uidAppId), query: uidQuery }).toString();
 
     const uidRes = await fetch(uidUrl.toString(), {
-      headers: { "X-Cybozu-API-Token": uidToken, "Accept": "application/json" },
+      headers: { "X-Cybozu-API-Token": uidToken, Accept: "application/json" },
     });
     const uidData = await uidRes.json();
     if (!uidRes.ok) return res.status(uidRes.status).json(uidData);
@@ -50,23 +50,33 @@ export default async function handler(req, res) {
       return res.status(404).json({ message: "companyId not found for this uid" });
     }
 
-    // === Step2: CL入荷アプリ検索 ===
+    // === Step2: CL入荷アプリ検索（最小差分で条件のみ修正） ===
+    // ✔ companyId が一致
+    // ✔ uploadFlag = "済" OR is empty
+    // ✔ unitPriceFlag（チェックボックス）が "済" を含むものを除外
     let where = `${inboundCompanyIdField} = "${escapeDoubleQuotes(companyId)}"`;
-    if (uploadedField && uploadedValue) {
-      where += ` and ${uploadedField} != "${escapeDoubleQuotes(uploadedValue)}"`;
-    }
+
+    // uploadFlag が「済」or 空欄を表示
+    where += ` and ( ${uploadedField} = "${escapeDoubleQuotes(uploadedValue)}" or ${uploadedField} is empty )`;
+
+    // unitPriceFlag が "済" を含むものを除外（チェックボックス）
+    where += ` and not ${unitPriceFlagField} in ("${escapeDoubleQuotes(uploadedValue)}")`;
+
     const inboundQuery = `${where} order by レコード番号 desc limit 50`;
 
     const inboundUrl = new URL("/k/v1/records.json", baseUrl);
-    inboundUrl.search = new URLSearchParams({ app: String(inboundAppId), query: inboundQuery }).toString();
+    inboundUrl.search = new URLSearchParams({
+      app: String(inboundAppId),
+      query: inboundQuery,
+    }).toString();
 
     const inRes = await fetch(inboundUrl.toString(), {
-      headers: { "X-Cybozu-API-Token": inboundToken, "Accept": "application/json" },
+      headers: { "X-Cybozu-API-Token": inboundToken, Accept: "application/json" },
     });
     const inData = await inRes.json();
     if (!inRes.ok) return res.status(inRes.status).json(inData);
 
-    // === Step3: 整形 ===
+    // === Step3: 整形（あなたのJSを完全維持） ===
     const records = (inData.records || []).map(rec => {
       const recordId = rec.$id?.value;
       const baseDate = rec.baseDate?.value;
@@ -87,6 +97,7 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({ records, companyId });
+
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: err.message || "search failed" });
