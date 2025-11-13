@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   const fileField = process.env.KINTONE_FILE_FIELD || "invoiceFile";
   const flagField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag"; // 文字列(1行)
   const flagValue = process.env.KINTONE_UPLOADED_VALUE || "済";
-  const appendMode = (process.env.KINTONE_FILE_APPEND || "true").toLowerCase() === "true";
+  const appendMode = false;   // ← 常に上書き
 
   try {
     const { fields, file } = await parseMultipart(req);
@@ -31,13 +31,8 @@ export default async function handler(req, res) {
       buffer: file.buffer
     });
 
-    // 2) 追記 or 置換
-    let filesForUpdate = [{ fileKey }];
-    if (appendMode) {
-      const existing = await fetchRecordFiles({ baseUrl, appId, token, recordId, fileField });
-      const keep = (existing || []).map(f => f.fileKey ? { fileKey: f.fileKey } : null).filter(Boolean);
-      filesForUpdate = [...keep, { fileKey }];
-    }
+    // 2) 置換
+    const filesForUpdate = [{ fileKey }];
 
     // 3) レコード更新（添付 + uploadFlag）
     await updateKintoneRecord({
