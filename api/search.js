@@ -57,10 +57,10 @@ export default async function handler(req, res) {
     let where = `${inboundCompanyIdField} = "${escapeDoubleQuotes(companyId)}"`;
 
     // uploadFlag が「済」or 空欄を表示
-    where += ` and ( ${uploadedField} = "${escapeDoubleQuotes(uploadedValue)}" or ${uploadedField} is empty )`;
+    where += ` and ( ${uploadedField} = "${escapeDoubleQuotes(uploadedValue)}" or ${uploadedField} = "" )`;
 
     // unitPriceFlag が "済" を含むものを除外（チェックボックス）
-    where += ` and not ${unitPriceFlagField} in ("${escapeDoubleQuotes(uploadedValue)}")`;
+    where += ` and  ${unitPriceFlagField} not in ("${escapeDoubleQuotes(uploadedValue)}")`;
 
     const inboundQuery = `${where} order by レコード番号 desc limit 50`;
 
