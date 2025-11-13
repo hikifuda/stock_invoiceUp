@@ -1,6 +1,7 @@
 // /api/search.js
-// UIDマスタで companyId を引き、その companyId に紐づく CL入荷レコードを返す
-// アップ済みフラグ（文字列1行, 値="済"）は除外
+// unitPriceFlag が「済」のレコードは除外
+// uploadFlag が「済」のレコードは含む（ステータス表示用）
+// invoiceFile のファイル名も返却する
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ message: "Method Not Allowed" });
@@ -10,20 +11,18 @@ export default async function handler(req, res) {
 
   const baseUrl = process.env.KINTONE_BASE_URL;
 
-  // UIDマスタ用
   const uidAppId   = process.env.KINTONE_UID_APP_ID;
   const uidToken   = process.env.KINTONE_UID_API_TOKEN;
   const uidField   = process.env.KINTONE_UID_FIELD || "uId";
   const companyIdField = process.env.KINTONE_COMPANYID_FIELD || "companyId";
 
-  // CL入荷アプリ用
   const inboundAppId = process.env.KINTONE_INBOUND_APP_ID;
   const inboundToken = process.env.KINTONE_INBOUND_API_TOKEN;
   const inboundCompanyIdField = process.env.KINTONE_INBOUND_COMPANYID_FIELD || "companyId";
 
-  // アップ済みフラグ（文字列1行）
   const uploadedField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag";
-  const uploadedValue = process.env.KINTONE_UPLOADED_VALUE || "済";
+  const unitPriceFlagField = "unitPriceFlag";   // ← フィールドコード確定
+  const doneValue = "済";
 
   if (!baseUrl || !uidAppId || !uidToken || !inboundAppId || !inboundToken) {
     return res.status(500).json({ message: "env vars not set" });
@@ -41,20 +40,17 @@ export default async function handler(req, res) {
     const uidData = await uidRes.json();
     if (!uidRes.ok) return res.status(uidRes.status).json(uidData);
 
-    if (!uidData.records?.length) {
-      return res.status(404).json({ message: "UID not found in master" });
-    }
+    if (!uidData.records?.length) return res.status(404).json({ message: "UID not found in master" });
 
     const companyId = uidData.records[0][companyIdField]?.value;
-    if (!companyId) {
-      return res.status(404).json({ message: "companyId not found for this uid" });
-    }
+    if (!companyId) return res.status(404).json({ message: "companyId not found for this uid" });
 
     // === Step2: CL入荷アプリ検索 ===
     let where = `${inboundCompanyIdField} = "${escapeDoubleQuotes(companyId)}"`;
-    if (uploadedField && uploadedValue) {
-      where += ` and ${uploadedField} != "${escapeDoubleQuotes(uploadedValue)}"`;
-    }
+
+    // 🆕 単価入力済は除外
+    where += ` and (${unitPriceFlagField} != "${doneValue}" or ${unitPriceFlagField} = "")`;
+
     const inboundQuery = `${where} order by レコード番号 desc limit 50`;
 
     const inboundUrl = new URL("/k/v1/records.json", baseUrl);
@@ -71,6 +67,9 @@ export default async function handler(req, res) {
       const recordId = rec.$id?.value;
       const baseDate = rec.baseDate?.value;
 
+      const uploadFlag = rec[uploadedField]?.value || "";
+      const invoiceFile = Array.isArray(rec.invoiceFile?.value) ? rec.invoiceFile.value : [];
+
       const tableRows = rec.itemTable?.value || [];
       const itemTable = tableRows.map(row => {
         const c = row.value || {};
@@ -83,7 +82,7 @@ export default async function handler(req, res) {
         };
       });
 
-      return { recordId, baseDate, itemTable };
+      return { recordId, baseDate, itemTable, uploadFlag, invoiceFile };
     });
 
     return res.status(200).json({ records, companyId });
