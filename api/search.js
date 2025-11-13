@@ -62,6 +62,9 @@ export default async function handler(req, res) {
     // unitPriceFlag が "済" を含むものを除外（チェックボックス）
     where += ` and  ${unitPriceFlagField} not in ("${escapeDoubleQuotes(uploadedValue)}")`;
 
+    // ★ cancelFlag（ドロップダウン）が未選択のみを表示
+    where += ` and cancelFlag in ("")`;
+
     const inboundQuery = `${where} order by レコード番号 desc limit 50`;
 
     const inboundUrl = new URL("/k/v1/records.json", baseUrl);
