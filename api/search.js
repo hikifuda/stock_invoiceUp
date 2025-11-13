@@ -1,9 +1,13 @@
 // /api/search.js
-// companyId一致、uploadFlag が「済」or 空、unitPriceFlag（チェックボックス）が「済」を含まないレコードを取得
-// uploadFlag と invoiceFile を返却 → フロントでステータス表示に使用
+// kintone公式クエリ仕様に準拠した完全版。
+// companyId一致、uploadFlag=("済" or 空欄) のみ表示。
+// unitPriceFlag（チェックボックス）に「済」が含まれるものを除外。
+// uploadFlag と invoiceFile を返却。
 
 export default async function handler(req, res) {
-  if (req.method !== "GET") return res.status(405).json({ message: "Method Not Allowed" });
+  if (req.method !== "GET") {
+    return res.status(405).json({ message: "Method Not Allowed" });
+  }
 
   const uid = (req.query.uid || "").toString();
   if (!uid) return res.status(400).json({ message: "uid is required" });
@@ -11,29 +15,34 @@ export default async function handler(req, res) {
   const baseUrl = process.env.KINTONE_BASE_URL;
 
   // UIDマスタ
-  const uidAppId   = process.env.KINTONE_UID_APP_ID;
-  const uidToken   = process.env.KINTONE_UID_API_TOKEN;
-  const uidField   = process.env.KINTONE_UID_FIELD || "uId";
+  const uidAppId = process.env.KINTONE_UID_APP_ID;
+  const uidToken = process.env.KINTONE_UID_API_TOKEN;
+  const uidField = process.env.KINTONE_UID_FIELD || "uId";
   const companyIdField = process.env.KINTONE_COMPANYID_FIELD || "companyId";
 
   // CL入荷アプリ
   const inboundAppId = process.env.KINTONE_INBOUND_APP_ID;
   const inboundToken = process.env.KINTONE_INBOUND_API_TOKEN;
-  const inboundCompanyIdField = process.env.KINTONE_INBOUND_COMPANYID_FIELD || "companyId";
+  const inboundCompanyIdField =
+    process.env.KINTONE_INBOUND_COMPANYID_FIELD || "companyId";
 
   const uploadedField = process.env.KINTONE_UPLOADED_FIELD || "uploadFlag";
-  const unitPriceFlagField = "unitPriceFlag"; // ← チェックボックス確定
-  const doneValue = "済";                     // チェックボックス値
+  const unitPriceFlagField = "unitPriceFlag"; // チェックボックス
+  const DONE = "済";
 
   if (!baseUrl || !uidAppId || !uidToken || !inboundAppId || !inboundToken) {
     return res.status(500).json({ message: "env vars not set" });
   }
 
   try {
-    // === Step1: UIDマスタから companyId を取得 ===
-    const uidQuery = `${uidField} = "${escapeDoubleQuotes(uid)}" limit 1`;
+    // === Step 1: UIDマスタから companyId を取得 ===
+    const uidQuery = `${uidField} = "${escape(uid)}" limit 1`;
+
     const uidUrl = new URL("/k/v1/records.json", baseUrl);
-    uidUrl.search = new URLSearchParams({ app: String(uidAppId), query: uidQuery }).toString();
+    uidUrl.search = new URLSearchParams({
+      app: String(uidAppId),
+      query: uidQuery,
+    }).toString();
 
     const uidRes = await fetch(uidUrl.toString(), {
       headers: { "X-Cybozu-API-Token": uidToken, Accept: "application/json" },
@@ -41,21 +50,24 @@ export default async function handler(req, res) {
     const uidData = await uidRes.json();
     if (!uidRes.ok) return res.status(uidRes.status).json(uidData);
 
-    if (!uidData.records?.length)
+    if (!uidData.records?.length) {
       return res.status(404).json({ message: "UID not found in master" });
+    }
 
     const companyId = uidData.records[0][companyIdField]?.value;
-    if (!companyId)
-      return res.status(404).json({ message: "companyId not found for this uid" });
+    if (!companyId) {
+      return res.status(404).json({ message: "companyId not found for uid" });
+    }
 
-    // === Step2: CL入荷アプリの検索条件を組み立て ===
-    let where = `${inboundCompanyIdField} = "${escapeDoubleQuotes(companyId)}"`;
+    // === Step 2: CL入荷アプリ検索クエリ ===
+    // kintone公式仕様に基づき is empty を使用
+    let where = `${inboundCompanyIdField} = "${escape(companyId)}"`;
 
-    // uploadFlag = "済" または "" のものを表示
-    where += ` and ( ${uploadedField} = "${doneValue}" or ${uploadedField} = "" )`;
+    // uploadFlag = "済" または 空欄
+    where += ` and ( ${uploadedField} = "${DONE}" or ${uploadedField} is empty )`;
 
-    // unitPriceFlag（チェックボックス）に「済」が含まれるレコードを除外
-    where += ` and not ${unitPriceFlagField} in ("${doneValue}")`;
+    // unitPriceFlag（チェックボックス）に "済" を含むものを除外
+    where += ` and not ${unitPriceFlagField} in ("${DONE}")`;
 
     const inboundQuery = `${where} order by レコード番号 desc limit 50`;
 
@@ -71,8 +83,8 @@ export default async function handler(req, res) {
     const inData = await inRes.json();
     if (!inRes.ok) return res.status(inRes.status).json(inData);
 
-    // === Step3: 整形（uploadFlag / invoiceFile も返す） ===
-    const records = (inData.records || []).map(rec => {
+    // === Step 3: 整形して返す ===
+    const records = (inData.records || []).map((rec) => {
       const recordId = rec.$id?.value;
       const baseDate = rec.baseDate?.value;
 
@@ -82,7 +94,7 @@ export default async function handler(req, res) {
         : [];
 
       const tableRows = rec.itemTable?.value || [];
-      const itemTable = tableRows.map(row => {
+      const itemTable = tableRows.map((row) => {
         const c = row.value || {};
         return {
           itemName: c.itemName?.value || "",
@@ -99,13 +111,14 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({ records, companyId });
-
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ message: err.message || "search failed" });
+    return res
+      .status(500)
+      .json({ message: err.message || "search failed" });
   }
 }
 
-function escapeDoubleQuotes(s) {
+function escape(s) {
   return String(s).replace(/"/g, '\\"');
 }
