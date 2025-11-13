@@ -76,10 +76,18 @@ export default async function handler(req, res) {
     const inData = await inRes.json();
     if (!inRes.ok) return res.status(inRes.status).json(inData);
 
-    // === Step3: 整形（あなたのJSを完全維持） ===
+    // === Step3: 整形 ===
     const records = (inData.records || []).map(rec => {
       const recordId = rec.$id?.value;
       const baseDate = rec.baseDate?.value;
+
+      // ★ uploadFlag を取得（文字列1行フィールド）
+      const uploadFlag = rec[uploadedField]?.value || "";
+
+      // ★ invoiceFile を取得（添付ファイルフィールド）
+      const invoiceFile = Array.isArray(rec.invoiceFile?.value)
+        ? rec.invoiceFile.value
+        : [];
 
       const tableRows = rec.itemTable?.value || [];
       const itemTable = tableRows.map(row => {
@@ -93,8 +101,10 @@ export default async function handler(req, res) {
         };
       });
 
-      return { recordId, baseDate, itemTable };
+      // ★★★ ここに uploadFlag と invoiceFile を追加して返す！
+      return { recordId, baseDate, itemTable, uploadFlag, invoiceFile };
     });
+
 
     return res.status(200).json({ records, companyId });
 
